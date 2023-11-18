@@ -1,0 +1,182 @@
+CREATE PROCEDURE ACTUALIZA @P_CODE NVARCHAR(10), @CANT DECIMAL(10,2), @COD_CLIENTE INT, @PAGO DECIMAL(10,2)
+AS
+BEGIN
+    SET NOCOUNT ON
+    SET IMPLICIT_TRANSACTIONS ON -- Habilita el modo implícito de transacción
+    
+    DECLARE @CANTI INT -- CANTIDAD EN EXISTENCIA
+
+    BEGIN TRY
+        -- Inicia la transacción principal
+        BEGIN TRANSACTION
+
+        -- PRIMERO MIRAMOS SI EXISTE EL CLIENTE CON CÓDIGO @COD_CLIENTE.
+        IF EXISTS (SELECT CUST_NUMBER FROM CUSTOMER WHERE CUST_NUMBER = @COD_CLIENTE)
+        BEGIN
+            -- REVISAMOS LA CANTIDAD EN STOCK Y LA COMPARAMOS CON LA CANTIDAD SOLICITADA
+            SET @CANTI = (SELECT PROD_QOH FROM PRODUCT WHERE PROD_CODE = @P_CODE)
+
+            -- REVISAMOS LA EXISTENCIA DEL PRODUCTO
+            IF EXISTS (SELECT * FROM PRODUCT  WHERE PROD_CODE = @P_CODE)
+            BEGIN
+                -- REVISAMOS LA CANTIDAD EN EXISTENCIA
+                IF @CANTI - @CANT >= 1
+                BEGIN
+                    -- REVISAMOS LA CANTIDAD A CANCELAR
+                    DECLARE @VALOR DECIMAL(10,2) -- VALOR UNITARIO DEL PRODUCTO
+                    SET @VALOR = (SELECT PROD_PRICE FROM PRODUCT WHERE PROD_CODE = @P_CODE)
+                    IF @PAGO >= @CANT * @VALOR
+                    BEGIN
+                        UPDATE PRODUCT
+                        SET PROD_QOH = PROD_QOH - @CANT WHERE PROD_CODE = @P_CODE
+
+                  -- SE ACTUALIZA LA TABLA DE TRANSACCIONES
+                  INSERT INTO ACCT_TRANSACTION (ACCT_TRANS_NUM, ACCT_TRANS_DATE, CUST_NUMBER,
+                  ACCT_TRANS_TYPE, ACCT_TRANS_AMOUNT)
+                 VALUES (
+                            (SELECT TOP 1 ACCT_TRANS_NUM FROM ACCT_TRANSACTION ORDER BY ACCT_TRANS_NUM DESC) + 1,
+                            GETDATE(), @COD_CLIENTE, 'PAYMENT', @CANT * @VALOR
+                        )
+
+              -- SE ACTUALIZA EL BALANCE DEL CLIENTE
+               UPDATE CUSTOMER
+              SET CUST_BALANCE = CUST_BALANCE + @CANT * @VALOR
+
+                        -- SE DEVUELVE EL CAMBIO
+                        PRINT 'PRODUCTO VENDIDO SU SALDO ES DE ' + STR(@PAGO - @CANT * @VALOR) + '  PESOS'
+                    END
+                    ELSE
+                    BEGIN
+                        PRINT 'LA CANTIDAD MÍNIMA A PAGAR ES DE' + STR(@CANT * @VALOR) + '  PESOS'
+                    END
+                END
+                ELSE
+                BEGIN
+                    PRINT 'NO EXISTE LA CANTIDAD'
+                END
+            END
+            ELSE
+            BEGIN
+                PRINT 'EL PRODUCTO NO EXISTE'
+            END
+        END
+        ELSE
+        BEGIN
+            PRINT 'CLIENTE NUEVO, PRIMERO INGRESE DATOS'
+        END
+
+        -- Confirmar la transacción principal
+        COMMIT
+    END TRY
+    BEGIN CATCH
+        -- En caso de error, revertir la transacción principal
+        ROLLBACK
+    END CATCH
+
+    SET IMPLICIT_TRANSACTIONS OFF -- Deshabilita el modo implícito de transacción
+END
+
+
+
+--Solución parcial.
+--PROCEDIMIENTO PRINCIPAL ENCARGADO DE INICIAR LA VENTA
+--RECIBE COMO ENTRADAS: CÓDIGO DEL PRODUCTO, CANTIDAD,
+--CÓDIGO DEL CLIENTE Y VALOR A PAGAR EN ESTE ORDEN.
+CREATE PROCEDURE ACTUALIZA @P_CODE NVARCHAR(10), @CANT DECIMAL(10,2), @COD_CLIENTE INT, @PAGO DECIMAL(10,2)
+AS
+BEGIN
+SET NOCOUNT ON
+DECLARE @CANTI INT --CANTIDAD EN EXISTENCIA
+--PRIMERO MIRAMOS SI EXISTE EL CLIENTE CON CÓDIGO @COD_CLIENTE.
+     IF EXISTS (SELECT CUST_NUMBER FROM CUSTOMER WHERE CUST_NUMBER = @COD_CLIENTE)
+         BEGIN
+         --REVISAMOS LA CANTIDAD EN STOCK Y LA COMPARAMOS CON LA CANTIDAD SOLICITADA
+           SET @CANTI = (SELECT PROD_QOH FROM PRODUCT WHERE PROD_CODE = @P_CODE)
+           --REVISAMOS LA EXISTENCIA DEL PRODUCTO
+           IF EXISTS (SELECT * FROM PRODUCT  WHERE PROD_CODE = @P_CODE)
+              --REVISAMOS LA CANTIDAD EN EXISTENCIA
+              IF @CANTI-@CANT >= 1
+                BEGIN
+                   --REVISAMOS LA CANTIDAD A CANCELAR
+                   DECLARE @VALOR DECIMAL(10,2)--VALOR UNITARIO DEL PRODUCTO
+                   SET @VALOR = (SELECT PROD_PRICE FROM PRODUCT WHERE PROD_CODE = @P_CODE)
+                    IF   @PAGO >= @CANT*@VALOR
+                        BEGIN
+                          UPDATE PRODUCT
+                          SET PROD_QOH = PROD_QOH - @CANT WHERE PROD_CODE = @P_CODE  
+                           --SE ACTUALIZA LA TABLA DE TRANSACCIONES
+                          INSERT INTO ACCT_TRANSACTION (ACCT_TRANS_NUM,ACCT_TRANS_DATE,CUST_NUMBER,
+                          ACCT_TRANS_TYPE,ACCT_TRANS_AMOUNT) VALUES (
+                          (SELECT TOP 1 ACCT_TRANS_NUM FROM ACCT_TRANSACTION ORDER BY ACCT_TRANS_NUM DESC)+1,
+                          GETDATE(),@COD_CLIENTE,'PAYMENT',@CANT*@VALOR)
+                          --SE ACTUALIZA EL BALANCE DEL CLIENTE
+                          UPDATE CUSTOMER
+                          SET CUST_BALANCE = CUST_BALANCE + @CANT*@VALOR
+                          --SE DEVUELVE EL CAMBIO
+                          PRINT 'PRODUCTO VENDIDO SU SALDO ES DE ' + STR(@PAGO-@CANT*@VALOR)+'  PESOS'
+                          --SE ACTUALIZA LA TABLA DE PRODUCTOS
+                        END
+                    ELSE  
+                       BEGIN
+                         PRINT 'LA CANTIDAD MÍNIMA A PAGAR ES DE' +STR(@CANT*@VALOR)+'  PESOS'
+                       END                                                                              
+                END
+              ELSE
+                 BEGIN
+                   PRINT 'NO EXISTE LA CANTIDAD'
+                 END    
+           ELSE
+             BEGIN
+               PRINT 'EL PRODUCTO NO EXISTE'
+             END
+         END
+    ELSE
+         BEGIN
+           PRINT 'CLIENTE NUEVO, PRIMERO INGRESE DATOS'
+         END  
+RETURN
+END
+GO
+
+--SE CORRE CON
+
+ACTUALIZA '11QER/31',5, 10010,560
+
+
+
+--Procedimiento que ingresa el cliente.
+--solucion:
+CREATE PROCEDURE INGRESA_CLIENTE @NUM INT, @NOM VARCHAR(20), @APE VARCHAR(20), @INI VARCHAR(1), @AREA INT, @TEL VARCHAR(20), @BAL DECIMAL(10,2)
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    BEGIN TRY
+        -- Inicia la transacción para ingresar un cliente
+        BEGIN TRANSACTION
+
+        INSERT INTO CUSTOMER (CUST_NUMBER, CUST_FNAME, CUST_LNAME, CUST_INITIAL, CUST_AREACODE, CUST_PHONE, CUST_BALANCE)
+        VALUES (@NUM, @NOM, @APE, @INI, @AREA, @TEL, @BAL)
+
+        -- Confirmar la transacción para ingresar un cliente
+        COMMIT
+    END TRY
+    BEGIN CATCH
+        -- En caso de error, revertir la transacción para ingresar un cliente
+        ROLLBACK
+    END CATCH
+END
+—---------------------------------------------------------------------------------------------------
+CREATE PROCEDURE INGRESA_CLIENTE @NUM INT, @NOM VARCHAR(20),
+@APE VARCHAR(20), @INI VARCHAR(1),@AREA INT,@TEL VARCHAR(20),@BAL DECIMAL(10,2)
+AS
+BEGIN
+INSERT INTO CUSTOMER (CUST_NUMBER,CUST_FNAME,CUST_LNAME,CUST_INITIAL,CUST_AREACODE
+,CUST_PHONE,CUST_BALANCE) VALUES(@NUM, @NOM, @APE, @INI, @AREA, @TEL, @BAL)
+END
+GO
+
+--Se corre con:
+INGRESA_CLIENTE 10020,'SAMUEL', 'ANGEL','S',615,'5994658',0
+
+
